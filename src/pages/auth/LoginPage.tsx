@@ -1,35 +1,41 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { extractApiError } from "../../utils/helpers";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("student1@swp.com");
-  const [password, setPassword] = useState("123456");
+  const [email, setEmail] = useState("admin@swp.com");
+  const [password, setPassword] = useState("Admin@123");
   const [error, setError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       setError("Please fill in all fields");
       return;
     }
-    const success = login(email, password);
-    if (success) {
-      if (email.includes("admin")) navigate("/admin");
-      else if (email.includes("supervisor")) navigate("/supervisor");
-      else if (email.includes("reviewer")) navigate("/reviewer");
-      else navigate("/student");
-    } else {
-      setError("Invalid credentials");
+    setError("");
+    setLoading(true);
+    try {
+      await login(email, password);
+      // Get user from localStorage since login just saved it
+      const stored = localStorage.getItem("user");
+      if (stored) {
+        const u = JSON.parse(stored);
+        const role = (u.role as string).toLowerCase();
+        navigate(`/${role}`);
+      } else {
+        navigate("/student");
+      }
+    } catch (err) {
+      setError(extractApiError(err, "Invalid email or password"));
+    } finally {
+      setLoading(false);
     }
-  };
-
-  const quickLogin = (_role: string, roleEmail: string) => {
-    setEmail(roleEmail);
-    setPassword("123456");
   };
 
   return (
@@ -153,42 +159,12 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full h-12 mt-5 bg-orange-500 hover:bg-orange-600 text-white font-semibold rounded-lg transition-colors shadow-sm"
+            disabled={loading}
+            className="w-full h-12 mt-5 bg-orange-500 hover:bg-orange-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors shadow-sm"
           >
-            Sign In
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="flex-1 h-px bg-slate-200" />
-          <span className="text-xs text-slate-400">Quick Login (Demo)</span>
-          <div className="flex-1 h-px bg-slate-200" />
-        </div>
-
-        {/* Quick Login Buttons */}
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { label: "Student", email: "student1@swp.com", icon: "🎓" },
-            {
-              label: "Supervisor",
-              email: "supervisor1@swp.com",
-              icon: "👨‍🏫",
-            },
-            { label: "Reviewer", email: "reviewer1@swp.com", icon: "📝" },
-            { label: "Admin", email: "admin@swp.com", icon: "⚙️" },
-          ].map((item) => (
-            <button
-              key={item.email}
-              type="button"
-              onClick={() => quickLogin(item.label, item.email)}
-              className="flex items-center justify-center gap-2 h-11 rounded-lg border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-all"
-            >
-              <span>{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

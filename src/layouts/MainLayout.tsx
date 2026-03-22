@@ -56,7 +56,7 @@ function getBreadcrumb(pathname: string, role: Role): string[] {
 }
 
 export default function MainLayout() {
-  const { user, logout, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -116,30 +116,6 @@ export default function MainLayout() {
             </NavLink>
           ))}
         </nav>
-
-        {/* Role Switcher (Dev) */}
-        <div className="p-4 border-t border-slate-100">
-          <p className="text-[11px] text-slate-400 mb-2 uppercase tracking-wider font-semibold">
-            Switch Role (Dev)
-          </p>
-          <select
-            value={user.role}
-            onChange={(e) => {
-              switchRole(e.target.value as Role);
-              navigate(`/${e.target.value.toLowerCase()}`);
-              setSidebarOpen(false);
-            }}
-            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 bg-slate-50 text-slate-600"
-          >
-            {(["Student", "Supervisor", "Reviewer", "Admin"] as Role[]).map(
-              (r) => (
-                <option key={r} value={r}>
-                  {roleLabels[r]}
-                </option>
-              ),
-            )}
-          </select>
-        </div>
       </aside>
 
       {/* Mobile overlay */}

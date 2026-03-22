@@ -1,23 +1,47 @@
-import { useState } from "react";
-import { mockUsers } from "../../utils/mockData";
+import { useState, useEffect, useCallback } from "react";
+import { userService } from "../../api/userService";
 import type { User, Role } from "../../api/types";
+import { extractApiError } from "../../utils/helpers";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 
 export default function UserManagement() {
-  const [users, setUsers] = useState<User[]>([...mockUsers]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formEmail, setFormEmail] = useState("");
   const [formRole, setFormRole] = useState<Role>("Student");
+  const [formUserCode, setFormUserCode] = useState("");
+  const [formPassword, setFormPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      const data = await userService.getAll();
+      setUsers(data);
+    } catch {
+      setError("Failed to load users");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
 
   const openCreate = () => {
     setEditingUser(null);
     setFormName("");
     setFormEmail("");
     setFormRole("Student");
+    setFormUserCode("");
+    setFormPassword("");
+    setError("");
     setModalOpen(true);
   };
 
@@ -26,34 +50,55 @@ export default function UserManagement() {
     setFormName(u.fullName);
     setFormEmail(u.email);
     setFormRole(u.role);
+    setFormUserCode(u.userCode);
+    setFormPassword("");
+    setError("");
     setModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formName.trim() || !formEmail.trim()) return;
-    if (editingUser) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.userId === editingUser.userId
-            ? { ...u, fullName: formName, email: formEmail, role: formRole }
-            : u,
-        ),
-      );
-    } else {
-      const newUser: User = {
-        userId: `u${Date.now()}`,
-        userCode: `UC${Date.now()}`,
-        fullName: formName,
-        email: formEmail,
-        role: formRole,
-      };
-      setUsers((prev) => [...prev, newUser]);
+    setSaving(true);
+    setError("");
+    try {
+      if (editingUser) {
+        await userService.update(editingUser.userId, {
+          fullName: formName,
+          email: formEmail,
+          role: formRole,
+          ...(formPassword ? { password: formPassword } : {}),
+        });
+      } else {
+        if (!formUserCode.trim() || !formPassword.trim()) {
+          setError("User Code and Password are required for new users");
+          setSaving(false);
+          return;
+        }
+        await userService.create({
+          userCode: formUserCode,
+          fullName: formName,
+          email: formEmail,
+          password: formPassword,
+          role: formRole,
+        });
+      }
+      setModalOpen(false);
+      await fetchUsers();
+    } catch (err: unknown) {
+      setError(extractApiError(err));
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    setUsers((prev) => prev.filter((u) => u.userId !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this user?")) return;
+    try {
+      await userService.delete(id);
+      await fetchUsers();
+    } catch {
+      alert("Failed to delete user");
+    }
   };
 
   const roleColors: Record<Role, string> = {
@@ -75,84 +120,117 @@ export default function UserManagement() {
         <Button onClick={openCreate}>+ Add User</Button>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200">
-                <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Name
-                </th>
-                <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Email
-                </th>
-                <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Role
-                </th>
-                <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {users.map((u) => (
-                <tr
-                  key={u.userId}
-                  className="hover:bg-slate-50/50 transition-colors"
-                >
-                  <td className="px-6 py-4 font-medium text-slate-700">
-                    {u.fullName}
-                  </td>
-                  <td className="px-6 py-4 text-slate-500">{u.email}</td>
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${roleColors[u.role]}`}
-                    >
-                      {u.role}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-colors"
-                        onClick={() => openEdit(u)}
-                      >
-                        ✎ Edit
-                      </button>
-                      <button
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
-                        onClick={() => handleDelete(u.userId)}
-                      >
-                        ✕ Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-16 text-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <span className="text-4xl">👤</span>
-                      <p className="text-slate-400 font-medium">
-                        No users found
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {loading ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Code
+                  </th>
+                  <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Name
+                  </th>
+                  <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Email
+                  </th>
+                  <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Role
+                  </th>
+                  <th className="text-left px-6 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {users.map((u) => (
+                  <tr
+                    key={u.userId}
+                    className="hover:bg-slate-50/50 transition-colors"
+                  >
+                    <td className="px-6 py-4 text-slate-500 font-mono text-xs">
+                      {u.userCode}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-slate-700">
+                      {u.fullName}
+                    </td>
+                    <td className="px-6 py-4 text-slate-500">{u.email}</td>
+                    <td className="px-6 py-4">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${roleColors[u.role]}`}
+                      >
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex gap-2">
+                        <button
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100 transition-colors"
+                          onClick={() => openEdit(u)}
+                        >
+                          ✎ Edit
+                        </button>
+                        <button
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                          onClick={() => handleDelete(u.userId)}
+                        >
+                          ✕ Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-16 text-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <span className="text-4xl">👤</span>
+                        <p className="text-slate-400 font-medium">
+                          No users found
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
-      {/* Create/Edit Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editingUser ? "Edit User" : "Add New User"}
       >
         <div className="space-y-5">
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+              {error}
+            </div>
+          )}
+          {!editingUser && (
+            <div>
+              <label
+                htmlFor="user-code"
+                className="block text-sm font-medium text-slate-700 mb-1.5"
+              >
+                User Code
+              </label>
+              <input
+                id="user-code"
+                value={formUserCode}
+                onChange={(e) => setFormUserCode(e.target.value)}
+                className="w-full h-11 px-4 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors"
+                placeholder="e.g. STU001"
+              />
+            </div>
+          )}
           <div>
             <label
               htmlFor="user-name"
@@ -186,6 +264,27 @@ export default function UserManagement() {
           </div>
           <div>
             <label
+              htmlFor="user-password"
+              className="block text-sm font-medium text-slate-700 mb-1.5"
+            >
+              Password{" "}
+              {editingUser && (
+                <span className="text-slate-400 font-normal">
+                  (leave blank to keep current)
+                </span>
+              )}
+            </label>
+            <input
+              id="user-password"
+              type="password"
+              value={formPassword}
+              onChange={(e) => setFormPassword(e.target.value)}
+              className="w-full h-11 px-4 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors"
+              placeholder={editingUser ? "••••••••" : "Min 8 characters"}
+            />
+          </div>
+          <div>
+            <label
               htmlFor="user-role"
               className="block text-sm font-medium text-slate-700 mb-1.5"
             >
@@ -209,9 +308,13 @@ export default function UserManagement() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={!formName.trim() || !formEmail.trim()}
+              disabled={!formName.trim() || !formEmail.trim() || saving}
             >
-              {editingUser ? "Save Changes" : "Create User"}
+              {saving
+                ? "Saving..."
+                : editingUser
+                  ? "Save Changes"
+                  : "Create User"}
             </Button>
           </div>
         </div>
