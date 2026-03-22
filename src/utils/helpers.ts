@@ -1,3 +1,39 @@
+import axios from "axios";
+
+/**
+ * Extract a human-readable error message from ASP.NET Core API responses.
+ * Handles: { errors: { Field: ["msg"] } }, { message: "msg" }, { title: "msg" }
+ */
+export const extractApiError = (
+  err: unknown,
+  fallback = "Operation failed",
+): string => {
+  if (axios.isAxiosError(err) && err.response?.data) {
+    const data = err.response.data;
+
+    // ASP.NET Core validation errors: { errors: { Field: ["..."] } }
+    if (data.errors && typeof data.errors === "object") {
+      const messages = Object.values(
+        data.errors as Record<string, string[]>,
+      ).flat();
+      if (messages.length > 0) return messages.join("; ");
+    }
+
+    if (typeof data.message === "string") return data.message;
+    if (
+      typeof data.title === "string" &&
+      data.title !== "One or more validation errors occurred."
+    )
+      return data.title;
+    if (typeof data === "string") return data;
+  }
+
+  if (!axios.isAxiosError(err))
+    return "Cannot connect to server. Please try again.";
+
+  return fallback;
+};
+
 export const formatDate = (dateStr: string): string => {
   return new Date(dateStr).toLocaleDateString("en-US", {
     year: "numeric",

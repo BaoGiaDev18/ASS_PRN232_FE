@@ -1,69 +1,105 @@
-import { useState } from "react";
-import { mockTopics, mockUsers } from "../../utils/mockData";
-import type { Topic } from "../../api/types";
+import { useState, useEffect, useCallback } from "react";
+import { topicService } from "../../api/topicService";
+import { userService } from "../../api/userService";
+import type { TopicDto, User } from "../../api/types";
+import { extractApiError } from "../../utils/helpers";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 
 export default function TopicManagement() {
-  const [topics, setTopics] = useState<Topic[]>([...mockTopics]);
+  const [topics, setTopics] = useState<TopicDto[]>([]);
+  const [reviewers, setReviewers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
+  const [editingTopic, setEditingTopic] = useState<TopicDto | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formDesc, setFormDesc] = useState("");
   const [formReviewerId, setFormReviewerId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  const reviewers = mockUsers.filter((u) => u.role === "Reviewer");
+  const fetchData = useCallback(async () => {
+    try {
+      const [topicData, reviewerData] = await Promise.all([
+        topicService.getAll(),
+        userService.getAll("Reviewer"),
+      ]);
+      setTopics(topicData);
+      setReviewers(reviewerData);
+    } catch {
+      setError("Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const openCreate = () => {
     setEditingTopic(null);
     setFormName("");
     setFormDesc("");
     setFormReviewerId(reviewers[0]?.userId ?? "");
+    setError("");
     setModalOpen(true);
   };
 
-  const openEdit = (t: Topic) => {
+  const openEdit = (t: TopicDto) => {
     setEditingTopic(t);
     setFormName(t.topicName);
-    setFormDesc(t.description);
+    setFormDesc(t.description ?? "");
     setFormReviewerId(t.reviewerId);
+    setError("");
     setModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formName.trim()) return;
-    if (editingTopic) {
-      setTopics((prev) =>
-        prev.map((t) =>
-          t.topicId === editingTopic.topicId
-            ? {
-                ...t,
-                topicName: formName,
-                description: formDesc,
-                reviewerId: formReviewerId,
-              }
-            : t,
-        ),
-      );
-    } else {
-      const newTopic: Topic = {
-        topicId: `t${Date.now()}`,
-        topicName: formName,
-        description: formDesc,
-        reviewerId: formReviewerId,
-      };
-      setTopics((prev) => [...prev, newTopic]);
+    setSaving(true);
+    setError("");
+    try {
+      if (editingTopic) {
+        await topicService.update(editingTopic.topicId, {
+          topicName: formName,
+          description: formDesc,
+          reviewerId: formReviewerId,
+        });
+      } else {
+        await topicService.create({
+          topicName: formName,
+          description: formDesc,
+          reviewerId: formReviewerId,
+        });
+      }
+      setModalOpen(false);
+      await fetchData();
+    } catch (err: unknown) {
+      setError(extractApiError(err));
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    setTopics((prev) => prev.filter((t) => t.topicId !== id));
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this topic?")) return;
+    try {
+      await topicService.delete(id);
+      await fetchData();
+    } catch {
+      alert("Failed to delete topic");
+    }
   };
 
-  const getReviewerName = (id: string) =>
-    mockUsers.find((u) => u.userId === id)?.fullName ?? "N/A";
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -110,9 +146,7 @@ export default function TopicManagement() {
                   <td className="px-6 py-4 text-slate-500 max-w-xs truncate">
                     {t.description}
                   </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    {getReviewerName(t.reviewerId)}
-                  </td>
+                  <td className="px-6 py-4 text-slate-500">{t.reviewerName}</td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
                       <button
@@ -148,13 +182,17 @@ export default function TopicManagement() {
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editingTopic ? "Edit Topic" : "Add New Topic"}
       >
         <div className="space-y-5">
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+              {error}
+            </div>
+          )}
           <div>
             <label
               htmlFor="topic-name"
@@ -211,8 +249,12 @@ export default function TopicManagement() {
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={!formName.trim()}>
-              {editingTopic ? "Save Changes" : "Create Topic"}
+            <Button onClick={handleSave} disabled={!formName.trim() || saving}>
+              {saving
+                ? "Saving..."
+                : editingTopic
+                  ? "Save Changes"
+                  : "Create Topic"}
             </Button>
           </div>
         </div>

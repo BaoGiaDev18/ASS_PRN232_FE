@@ -1,56 +1,87 @@
-import { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { mockQuestions, mockGroups, mockUsers } from "../../utils/mockData";
+import { useState, useEffect, useCallback } from "react";
+import { supervisorService } from "../../api/supervisorService";
+import type { QuestionListDto, SupervisorGroupDto } from "../../api/types";
 import StatusBadge from "../../components/StatusBadge";
 import StatCard from "../../components/StatCard";
 import Modal from "../../components/Modal";
 import Button from "../../components/Button";
 import { formatDate } from "../../utils/helpers";
-import type { Question } from "../../api/types";
 
 export default function SupervisorDashboard() {
-  const { user } = useAuth();
+  const [questions, setQuestions] = useState<QuestionListDto[]>([]);
+  const [groups, setGroups] = useState<SupervisorGroupDto[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Groups assigned to this supervisor
-  const supervisorGroups = mockGroups.filter(
-    (g) => g.supervisorId === user?.userId,
-  );
-  const groupIds = supervisorGroups.map((g) => g.groupId);
-
-  // Questions from supervisor's groups
-  const questions = mockQuestions.filter((q) => groupIds.includes(q.groupId));
   const pendingQuestions = questions.filter(
     (q) => q.status === "Pending Approval",
   );
 
-  const getUserName = (id: string) =>
-    mockUsers.find((u) => u.userId === id)?.fullName ?? "Unknown";
-  const getGroupName = (id: string) =>
-    mockGroups.find((g) => g.groupId === id)?.groupName ?? "Unknown";
-
-  const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(
-    null,
-  );
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [actionDone, setActionDone] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const handleApprove = (q: Question) => {
-    setActionDone(
-      `Question "${q.title.substring(0, 40)}..." has been approved.`,
+  const fetchData = useCallback(async () => {
+    try {
+      const [qData, gData] = await Promise.all([
+        supervisorService.getQuestions(),
+        supervisorService.getMyGroups(),
+      ]);
+      setQuestions(qData);
+      setGroups(gData);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleApprove = async (q: QuestionListDto) => {
+    setActionLoading(true);
+    try {
+      await supervisorService.approve(q.questionId);
+      setActionDone(
+        `Question "${q.title.substring(0, 40)}..." has been approved.`,
+      );
+      await fetchData();
+      setTimeout(() => setActionDone(null), 3000);
+    } catch {
+      alert("Failed to approve question");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectReason.trim() || !rejectTargetId) return;
+    setActionLoading(true);
+    try {
+      await supervisorService.reject(rejectTargetId, rejectReason);
+      setActionDone(`Question has been rejected with reason provided.`);
+      setRejectModalOpen(false);
+      setRejectTargetId(null);
+      setRejectReason("");
+      await fetchData();
+      setTimeout(() => setActionDone(null), 3000);
+    } catch {
+      alert("Failed to reject question");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
+      </div>
     );
-    setSelectedQuestion(null);
-    setTimeout(() => setActionDone(null), 3000);
-  };
-
-  const handleRejectSubmit = () => {
-    if (!rejectReason.trim()) return;
-    setActionDone(`Question has been rejected with reason provided.`);
-    setRejectModalOpen(false);
-    setSelectedQuestion(null);
-    setRejectReason("");
-    setTimeout(() => setActionDone(null), 3000);
-  };
+  }
 
   return (
     <div>
@@ -74,7 +105,7 @@ export default function SupervisorDashboard() {
         />
         <StatCard
           label="Groups Managed"
-          value={supervisorGroups.length}
+          value={groups.length}
           icon="👥"
           color="bg-blue-50 text-blue-600"
         />
@@ -125,30 +156,29 @@ export default function SupervisorDashboard() {
                     {q.title}
                   </td>
                   <td className="px-6 py-4 text-slate-500">
-                    {getUserName(q.createdBy)}
+                    {q.createdByName}
                   </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    {getGroupName(q.groupId)}
-                  </td>
+                  <td className="px-6 py-4 text-slate-500">{q.groupName}</td>
                   <td className="px-6 py-4">
                     <StatusBadge status={q.status} />
                   </td>
                   <td className="px-6 py-4 text-slate-400 text-xs">
-                    {formatDate(q.createdAt)}
+                    {q.createdAt ? formatDate(q.createdAt) : "—"}
                   </td>
                   <td className="px-6 py-4">
                     {q.status === "Pending Approval" && (
                       <div className="flex gap-2">
                         <button
-                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-50"
                           onClick={() => handleApprove(q)}
+                          disabled={actionLoading}
                         >
                           ✓ Approve
                         </button>
                         <button
                           className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
                           onClick={() => {
-                            setSelectedQuestion(q);
+                            setRejectTargetId(q.questionId);
                             setRejectModalOpen(true);
                           }}
                         >
@@ -176,61 +206,52 @@ export default function SupervisorDashboard() {
         </div>
       </div>
 
-      {/* Reject Modal */}
       <Modal
         open={rejectModalOpen}
         onClose={() => {
           setRejectModalOpen(false);
           setRejectReason("");
+          setRejectTargetId(null);
         }}
         title="Reject Question"
       >
-        {selectedQuestion && (
-          <div>
-            <div className="mb-5 p-4 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-xs font-semibold text-slate-500 mb-1">
-                {selectedQuestion.title}
-              </p>
-              <p className="text-sm text-slate-600 leading-relaxed">
-                {selectedQuestion.content}
-              </p>
-            </div>
-            <div className="mb-5">
-              <label
-                htmlFor="reject-reason"
-                className="block text-sm font-medium text-slate-700 mb-1.5"
-              >
-                Rejection Reason <span className="text-rose-500">*</span>
-              </label>
-              <textarea
-                id="reject-reason"
-                rows={4}
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="Provide a reason for rejection..."
-                className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 resize-none transition-colors"
-              />
-            </div>
-            <div className="flex gap-3 justify-end">
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setRejectModalOpen(false);
-                  setRejectReason("");
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="danger"
-                onClick={handleRejectSubmit}
-                disabled={!rejectReason.trim()}
-              >
-                Confirm Rejection
-              </Button>
-            </div>
+        <div>
+          <div className="mb-5">
+            <label
+              htmlFor="reject-reason"
+              className="block text-sm font-medium text-slate-700 mb-1.5"
+            >
+              Rejection Reason <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              id="reject-reason"
+              rows={4}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Provide a reason for rejection..."
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-400 resize-none transition-colors"
+            />
           </div>
-        )}
+          <div className="flex gap-3 justify-end">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setRejectModalOpen(false);
+                setRejectReason("");
+                setRejectTargetId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleRejectSubmit}
+              disabled={!rejectReason.trim() || actionLoading}
+            >
+              {actionLoading ? "Rejecting..." : "Confirm Rejection"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

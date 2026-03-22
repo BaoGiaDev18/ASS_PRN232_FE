@@ -1,94 +1,139 @@
-import { useState } from "react";
-import {
-  mockGroups,
-  mockUsers,
-  mockTopics,
-  mockGroupMembers,
-} from "../../utils/mockData";
-import type { Group, GroupMember } from "../../api/types";
+import { useState, useEffect, useCallback } from "react";
+import { groupService } from "../../api/groupService";
+import { userService } from "../../api/userService";
+import { topicService } from "../../api/topicService";
+import type { GroupDto, GroupDetailDto, User, TopicDto } from "../../api/types";
+import { extractApiError } from "../../utils/helpers";
 import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 
 export default function GroupManagement() {
-  const [groups, setGroups] = useState<Group[]>([...mockGroups]);
-  const [members, setMembers] = useState<GroupMember[]>([...mockGroupMembers]);
+  const [groups, setGroups] = useState<GroupDto[]>([]);
+  const [supervisors, setSupervisors] = useState<User[]>([]);
+  const [students, setStudents] = useState<User[]>([]);
+  const [topicsList, setTopicsList] = useState<TopicDto[]>([]);
+  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingGroup, setEditingGroup] = useState<Group | null>(null);
+  const [editingGroup, setEditingGroup] = useState<GroupDetailDto | null>(null);
 
   const [formName, setFormName] = useState("");
   const [formSupervisorId, setFormSupervisorId] = useState("");
-  const [formStudentIds, setFormStudentIds] = useState<string[]>([]);
   const [formTopicId, setFormTopicId] = useState("");
+  const [formStudentIds, setFormStudentIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
-  const supervisors = mockUsers.filter((u) => u.role === "Supervisor");
-  const students = mockUsers.filter((u) => u.role === "Student");
+  const fetchGroups = useCallback(async () => {
+    try {
+      const data = await groupService.getAll();
+      setGroups(data);
+    } catch {
+      setError("Failed to load groups");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchDropdownData = useCallback(async () => {
+    try {
+      const [sups, studs, topics] = await Promise.all([
+        userService.getAll("Supervisor"),
+        userService.getAll("Student"),
+        topicService.getAll(),
+      ]);
+      setSupervisors(sups);
+      setStudents(studs);
+      setTopicsList(topics);
+    } catch {
+      // dropdown data load failure is non-critical
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGroups();
+    fetchDropdownData();
+  }, [fetchGroups, fetchDropdownData]);
 
   const openCreate = () => {
     setEditingGroup(null);
     setFormName("");
     setFormSupervisorId(supervisors[0]?.userId ?? "");
     setFormStudentIds([]);
-    setFormTopicId(mockTopics[0]?.topicId ?? "");
+    setFormTopicId(topicsList[0]?.topicId ?? "");
+    setError("");
     setModalOpen(true);
   };
 
-  const openEdit = (g: Group) => {
-    setEditingGroup(g);
-    setFormName(g.groupName);
-    setFormSupervisorId(g.supervisorId);
-    setFormStudentIds(
-      members.filter((m) => m.groupId === g.groupId).map((m) => m.studentId),
-    );
-    setFormTopicId(g.topicId);
-    setModalOpen(true);
-  };
-
-  const handleSave = () => {
-    if (!formName.trim()) return;
-    if (editingGroup) {
-      setGroups((prev) =>
-        prev.map((g) =>
-          g.groupId === editingGroup.groupId
-            ? {
-                ...g,
-                groupName: formName,
-                supervisorId: formSupervisorId,
-                topicId: formTopicId,
-              }
-            : g,
-        ),
-      );
-      // Update members for this group
-      setMembers((prev) => [
-        ...prev.filter((m) => m.groupId !== editingGroup.groupId),
-        ...formStudentIds.map((sid) => ({
-          groupId: editingGroup.groupId,
-          studentId: sid,
-        })),
-      ]);
-    } else {
-      const newGroupId = `g${Date.now()}`;
-      const newGroup: Group = {
-        groupId: newGroupId,
-        groupName: formName,
-        supervisorId: formSupervisorId,
-        topicId: formTopicId,
-      };
-      setGroups((prev) => [...prev, newGroup]);
-      setMembers((prev) => [
-        ...prev,
-        ...formStudentIds.map((sid) => ({
-          groupId: newGroupId,
-          studentId: sid,
-        })),
-      ]);
+  const openEdit = async (g: GroupDto) => {
+    try {
+      const detail = await groupService.getById(g.groupId);
+      setEditingGroup(detail);
+      setFormName(detail.groupName);
+      setFormSupervisorId(detail.supervisorId);
+      setFormStudentIds(detail.members.map((m) => m.studentId));
+      setFormTopicId(detail.topicId);
+      setError("");
+      setModalOpen(true);
+    } catch {
+      alert("Failed to load group details");
     }
-    setModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
-    setGroups((prev) => prev.filter((g) => g.groupId !== id));
-    setMembers((prev) => prev.filter((m) => m.groupId !== id));
+  const handleSave = async () => {
+    if (!formName.trim()) return;
+    setSaving(true);
+    setError("");
+    try {
+      if (editingGroup) {
+        await groupService.update(editingGroup.groupId, {
+          groupName: formName,
+          supervisorId: formSupervisorId,
+          topicId: formTopicId,
+        });
+        // Sync members: add new, remove old
+        const currentIds = editingGroup.members.map((m) => m.studentId);
+        const toAdd = formStudentIds.filter((id) => !currentIds.includes(id));
+        const toRemove = currentIds.filter(
+          (id) => !formStudentIds.includes(id),
+        );
+        await Promise.all([
+          ...toAdd.map((id) =>
+            groupService.addMember(editingGroup.groupId, id),
+          ),
+          ...toRemove.map((id) =>
+            groupService.removeMember(editingGroup.groupId, id),
+          ),
+        ]);
+      } else {
+        const created = await groupService.create({
+          groupName: formName,
+          supervisorId: formSupervisorId,
+          topicId: formTopicId,
+        });
+        // Add members to the newly created group
+        await Promise.all(
+          formStudentIds.map((id) =>
+            groupService.addMember(created.groupId, id),
+          ),
+        );
+      }
+      setModalOpen(false);
+      await fetchGroups();
+    } catch (err: unknown) {
+      setError(extractApiError(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this group?")) return;
+    try {
+      await groupService.delete(id);
+      await fetchGroups();
+    } catch {
+      alert("Failed to delete group");
+    }
   };
 
   const toggleStudent = (studentId: string) => {
@@ -99,19 +144,13 @@ export default function GroupManagement() {
     );
   };
 
-  const getSupervisorName = (id: string) =>
-    mockUsers.find((u) => u.userId === id)?.fullName ?? "N/A";
-  const getStudentNames = (groupId: string) =>
-    members
-      .filter((m) => m.groupId === groupId)
-      .map(
-        (m) =>
-          mockUsers.find((u) => u.userId === m.studentId)?.fullName ??
-          "Unknown",
-      )
-      .join(", ");
-  const getTopicName = (id: string) =>
-    mockTopics.find((t) => t.topicId === id)?.topicName ?? "N/A";
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -159,14 +198,14 @@ export default function GroupManagement() {
                     {g.groupName}
                   </td>
                   <td className="px-6 py-4 text-slate-500">
-                    {getSupervisorName(g.supervisorId)}
+                    {g.supervisorName}
                   </td>
-                  <td className="px-6 py-4 text-slate-500 max-w-xs truncate">
-                    {getStudentNames(g.groupId)}
+                  <td className="px-6 py-4 text-slate-500">
+                    {g.memberCount} member{g.memberCount !== 1 ? "s" : ""}
                   </td>
                   <td className="px-6 py-4">
                     <span className="inline-flex items-center px-2.5 py-1 bg-orange-50 text-orange-700 text-xs font-semibold rounded-full border border-orange-200">
-                      {getTopicName(g.topicId)}
+                      {g.topicName}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -211,6 +250,11 @@ export default function GroupManagement() {
         title={editingGroup ? "Edit Group" : "Add New Group"}
       >
         <div className="space-y-5">
+          {error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm">
+              {error}
+            </div>
+          )}
           <div>
             <label
               htmlFor="group-name"
@@ -259,7 +303,7 @@ export default function GroupManagement() {
               onChange={(e) => setFormTopicId(e.target.value)}
               className="w-full h-11 px-4 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 transition-colors"
             >
-              {mockTopics.map((t) => (
+              {topicsList.map((t) => (
                 <option key={t.topicId} value={t.topicId}>
                   {t.topicName}
                 </option>
@@ -291,8 +335,12 @@ export default function GroupManagement() {
             <Button variant="secondary" onClick={() => setModalOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={!formName.trim()}>
-              {editingGroup ? "Save Changes" : "Create Group"}
+            <Button onClick={handleSave} disabled={!formName.trim() || saving}>
+              {saving
+                ? "Saving..."
+                : editingGroup
+                  ? "Save Changes"
+                  : "Create Group"}
             </Button>
           </div>
         </div>
