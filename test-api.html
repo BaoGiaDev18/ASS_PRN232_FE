@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Test Tool</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1e293b;
+      color: #e2e8f0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    h1 { color: #f97316; }
+    button {
+      background: #f97316;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      cursor: pointer;
+      border-radius: 6px;
+      margin: 5px;
+      font-size: 14px;
+    }
+    button:hover { background: #ea580c; }
+    .result {
+      background: #0f172a;
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      border: 1px solid #334155;
+    }
+    .success { color: #22c55e; }
+    .error { color: #ef4444; }
+    input {
+      background: #334155;
+      color: white;
+      border: 1px solid #475569;
+      padding: 8px;
+      border-radius: 4px;
+      width: 300px;
+      margin: 5px;
+    }
+    label {
+      display: inline-block;
+      width: 100px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Backend API Test Tool</h1>
+    <p style="color: #94a3b8;">Test kết nối backend trước khi login</p>
+
+    <div style="margin: 20px 0;">
+      <div>
+        <label>Base URL:</label>
+        <input type="text" id="baseUrl" value="https://localhost:7128/api" style="width: 400px;">
+      </div>
+      <div style="margin-top: 10px;">
+        <label>Email:</label>
+        <input type="text" id="email" value="admin@swp.com">
+      </div>
+      <div style="margin-top: 10px;">
+        <label>Password:</label>
+        <input type="password" id="password" value="Admin@123">
+      </div>
+    </div>
+
+    <div>
+      <button onclick="testHttps()">Test HTTPS (7128)</button>
+      <button onclick="testHttp()">Test HTTP (5192)</button>
+      <button onclick="testLogin()">Test Login</button>
+      <button onclick="clearResult()">Clear</button>
+    </div>
+
+    <div id="result" class="result"></div>
+  </div>
+
+  <script>
+    const log = (msg, type = 'info') => {
+      const result = document.getElementById('result');
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type === 'success' ? 'success' : type === 'error' ? 'error' : '';
+      result.innerHTML += `<div class="${className}">[${timestamp}] ${msg}</div>`;
+    };
+
+    const clearResult = () => {
+      document.getElementById('result').innerHTML = '';
+    };
+
+    async function testHttps() {
+      clearResult();
+      log('🔍 Testing HTTPS connection: https://localhost:7128/api/auth/me');
+
+      try {
+        const response = await fetch('https://localhost:7128/api/auth/me', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        log(`✅ Response Status: ${response.status}`, 'success');
+        const data = await response.json();
+        log('Response: ' + JSON.stringify(data, null, 2), 'success');
+      } catch (err) {
+        log(`❌ Error: ${err.message}`, 'error');
+        log('Tip: Nếu thấy SSL error, mở trực tiếp https://localhost:7128/swagger và accept certificate', 'error');
+      }
+    }
+
+    async function testHttp() {
+      clearResult();
+      log('🔍 Testing HTTP connection: http://localhost:5192/api/auth/me');
+
+      try {
+        const response = await fetch('http://localhost:5192/api/auth/me', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+
+        log(`✅ Response Status: ${response.status}`, 'success');
+        const data = await response.json();
+        log('Response: ' + JSON.stringify(data, null, 2), 'success');
+      } catch (err) {
+        log(`❌ Error: ${err.message}`, 'error');
+      }
+    }
+
+    async function testLogin() {
+      clearResult();
+      const baseUrl = document.getElementById('baseUrl').value;
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+
+      log(`🔍 Testing Login: ${baseUrl}/auth/login`);
+      log(`   Email: ${email}`);
+      log(`   Password: ${password.replace(/./g, '*')}`);
+
+      try {
+        const response = await fetch(`${baseUrl}/auth/login`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ email, password })
+        });
+
+        log(`✅ Response Status: ${response.status}`, response.ok ? 'success' : 'error');
+
+        const data = await response.json();
+        log('Response: ' + JSON.stringify(data, null, 2), response.ok ? 'success' : 'error');
+
+        if (response.ok && data.accessToken) {
+          log('🎉 LOGIN THÀNH CÔNG!', 'success');
+          log(`Token: ${data.accessToken.substring(0, 50)}...`, 'success');
+        }
+      } catch (err) {
+        log(`❌ Error: ${err.message}`, 'error');
+        log('💡 Các lý do có thể:', 'error');
+        log('   1. Backend chưa chạy', 'error');
+        log('   2. CORS chưa được config', 'error');
+        log('   3. SSL certificate chưa được accept', 'error');
+        log('   4. Port không đúng', 'error');
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,27 +1,65 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { mockGroups, mockTopics, mockGroupMembers } from "../../utils/mockData";
 import Button from "../../components/Button";
 import Card from "../../components/Card";
+import { createQuestion } from "../../api/studentService";
+import { groupService } from "../../api/groupService";
+import type { GroupDto } from "../../api/types";
 
 export default function CreateQuestionPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
+
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  const membership = mockGroupMembers.find((m) => m.studentId === user?.userId);
-  const group = mockGroups.find((g) => g.groupId === membership?.groupId);
-  const topic = mockTopics.find((t) => t.topicId === group?.topicId);
+  const [group, setGroup] = useState<GroupDto | null>(null);
+  const [loadingGroup, setLoadingGroup] = useState(true);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    loadStudentGroup();
+  }, []);
+
+  const loadStudentGroup = async () => {
+    try {
+      setLoadingGroup(true);
+      // Fetch all groups and find the one where the current student is a member
+      // Note: Backend might need an endpoint specifically for student's group
+      const groups = await groupService.getAll();
+      // For now, we'll assume student is in the first group
+      // This should be replaced with proper group membership check
+      if (groups.length > 0) {
+        setGroup(groups[0]);
+      }
+    } catch (err: any) {
+      console.error("Failed to load group:", err);
+    } finally {
+      setLoadingGroup(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !content.trim()) return;
-    // Mock submission
-    setSubmitted(true);
-    setTimeout(() => navigate("/student"), 1500);
+    if (!title.trim() || !content.trim() || !group) return;
+
+    try {
+      setSubmitting(true);
+      await createQuestion({
+        title,
+        content,
+        groupId: group.groupId,
+        topicId: group.topicId,
+      });
+      setSubmitted(true);
+      setTimeout(() => navigate("/student"), 1500);
+    } catch (err: any) {
+      console.error("Failed to create question:", err);
+      alert(err.response?.data?.message || "Failed to create question");
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -73,7 +111,7 @@ export default function CreateQuestionPage() {
             </label>
             <input
               type="text"
-              value={topic?.topicName ?? "N/A"}
+              value={loadingGroup ? "Loading..." : group?.topicName ?? "N/A"}
               readOnly
               className="w-full h-11 px-4 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500"
             />
@@ -114,13 +152,17 @@ export default function CreateQuestionPage() {
           </div>
 
           <div className="flex gap-4">
-            <Button type="submit" disabled={!title.trim() || !content.trim()}>
-              Submit Question
+            <Button
+              type="submit"
+              disabled={!title.trim() || !content.trim() || submitting || !group}
+            >
+              {submitting ? "Submitting..." : "Submit Question"}
             </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={() => navigate("/student")}
+              disabled={submitting}
             >
               Cancel
             </Button>

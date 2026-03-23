@@ -1,31 +1,66 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import {
-  mockQuestions,
-  mockUsers,
-  mockGroups,
-  mockTopics,
-  mockAnswers,
-} from "../../utils/mockData";
 import StatusBadge from "../../components/StatusBadge";
 import Button from "../../components/Button";
 import { formatDate } from "../../utils/helpers";
+import {
+  getStudentQuestionDetail,
+  updateQuestion,
+} from "../../api/studentService";
+import type { QuestionDetailDto } from "../../api/types";
 
 export default function QuestionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const question = mockQuestions.find((q) => q.questionId === id);
-  const answer = mockAnswers.find((a) => a.questionId === id);
+
+  const [question, setQuestion] = useState<QuestionDetailDto | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(question?.content ?? "");
+  const [editContent, setEditContent] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  if (!question) {
+  useEffect(() => {
+    if (id) {
+      loadQuestionDetail();
+    }
+  }, [id]);
+
+  const loadQuestionDetail = async () => {
+    if (!id) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getStudentQuestionDetail(id);
+      setQuestion(data);
+      setEditContent(data.content);
+    } catch (err: any) {
+      console.error("Failed to load question:", err);
+      setError(err.response?.data?.message || "Failed to load question");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-orange-600"></div>
+        <p className="text-slate-500 text-sm">Loading question...</p>
+      </div>
+    );
+  }
+
+  if (error || !question) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
         <span className="text-5xl">🔍</span>
-        <p className="text-slate-400 text-lg font-medium">Question not found</p>
+        <p className="text-slate-400 text-lg font-medium">
+          {error || "Question not found"}
+        </p>
         <Button
           variant="ghost"
           className="mt-2"
@@ -40,17 +75,25 @@ export default function QuestionDetailPage() {
   const canEdit = question.status === "Rejected";
   const isLocked = question.status === "Answered";
 
-  const getUserName = (uid: string) =>
-    mockUsers.find((u) => u.userId === uid)?.fullName ?? "Unknown";
-  const getGroupName = (gid: string) =>
-    mockGroups.find((g) => g.groupId === gid)?.groupName ?? "Unknown";
-  const getTopicName = (tid: string) =>
-    mockTopics.find((t) => t.topicId === tid)?.topicName ?? "Unknown";
+  const handleSave = async () => {
+    if (!id || !editContent.trim()) return;
 
-  const handleSave = () => {
-    setSaved(true);
-    setIsEditing(false);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      setSaving(true);
+      await updateQuestion(id, { content: editContent });
+      setSaved(true);
+      setIsEditing(false);
+
+      // Reload question to get updated data
+      await loadQuestionDetail();
+
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err: any) {
+      console.error("Failed to update question:", err);
+      alert(err.response?.data?.message || "Failed to update question");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -83,18 +126,16 @@ export default function QuestionDetailPage() {
               Created By
             </p>
             <p className="text-sm text-slate-700 font-medium">
-              {getUserName(question.createdBy)}
+              {question.createdByName}
             </p>
-            <p className="text-xs text-slate-400">
-              {getGroupName(question.groupId)}
-            </p>
+            <p className="text-xs text-slate-400">{question.groupName}</p>
           </div>
           <div>
             <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
               Topic
             </p>
             <p className="text-sm text-slate-700 font-medium">
-              {getTopicName(question.topicId)}
+              {question.topicName}
             </p>
           </div>
           <div>
@@ -143,7 +184,7 @@ export default function QuestionDetailPage() {
           </div>
         )}
 
-        {answer && (
+        {question.answer && (
           <div className="mx-8 mb-6 bg-emerald-50 border border-emerald-200 rounded-xl p-5">
             <div className="flex items-center gap-2 mb-2">
               <span className="w-5 h-5 bg-emerald-500 rounded-full flex items-center justify-center text-white text-xs">
@@ -154,11 +195,11 @@ export default function QuestionDetailPage() {
               </p>
             </div>
             <p className="text-sm text-emerald-800 leading-relaxed">
-              {answer.answerContent}
+              {question.answer.answerContent}
             </p>
             <p className="text-xs text-emerald-500 mt-3 font-medium">
-              — {getUserName(answer.reviewerId)} •{" "}
-              {formatDate(answer.answeredAt)}
+              — {question.answer.reviewerName} •{" "}
+              {formatDate(question.answer.answeredAt)}
             </p>
           </div>
         )}
@@ -180,11 +221,11 @@ export default function QuestionDetailPage() {
                 </span>
               </div>
             )}
-            {answer && (
+            {question.answer && (
               <div>
                 <span className="text-slate-400">Answered:</span>{" "}
                 <span className="text-slate-600 font-medium">
-                  {formatDate(answer.answeredAt)}
+                  {formatDate(question.answer.answeredAt)}
                 </span>
               </div>
             )}
@@ -198,13 +239,16 @@ export default function QuestionDetailPage() {
           )}
           {isEditing && (
             <>
-              <Button onClick={handleSave}>Save & Re-submit</Button>
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? "Saving..." : "Save & Re-submit"}
+              </Button>
               <Button
                 variant="secondary"
                 onClick={() => {
                   setIsEditing(false);
                   setEditContent(question.content);
                 }}
+                disabled={saving}
               >
                 Cancel
               </Button>
