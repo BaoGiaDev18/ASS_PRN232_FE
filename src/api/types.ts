@@ -244,7 +244,6 @@ export interface Answer {
 
 export interface Notification {
   notificationId: string;
-  userId: string;
   message: string;
   isRead: boolean;
   createdAt: string;

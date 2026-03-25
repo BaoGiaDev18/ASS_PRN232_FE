@@ -18,6 +18,7 @@ export default function QuestionDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
   const [editContent, setEditContent] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,6 +37,7 @@ export default function QuestionDetailPage() {
       setError(null);
       const data = await getStudentQuestionDetail(id);
       setQuestion(data);
+      setEditTitle(data.title);
       setEditContent(data.content);
     } catch (err: any) {
       console.error("Failed to load question:", err);
@@ -76,11 +78,14 @@ export default function QuestionDetailPage() {
   const isLocked = question.status === "Answered";
 
   const handleSave = async () => {
-    if (!id || !editContent.trim()) return;
+    if (!id || !editTitle.trim() || !editContent.trim()) return;
 
     try {
       setSaving(true);
-      await updateQuestion(id, { content: editContent });
+      await updateQuestion(id, {
+        title: editTitle,
+        content: editContent
+      });
       setSaved(true);
       setIsEditing(false);
 
@@ -108,15 +113,27 @@ export default function QuestionDetailPage() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
         {/* Header */}
         <div className="px-8 py-6 border-b border-slate-100 flex items-start justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">
-              {question.title}
-            </h1>
+          <div className="flex-1">
+            {isEditing ? (
+              <input
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                className="w-full text-xl font-bold text-slate-800 border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                placeholder="Question title"
+              />
+            ) : (
+              <h1 className="text-xl font-bold text-slate-800">
+                {saved ? editTitle : question.title}
+              </h1>
+            )}
             <p className="text-xs text-slate-400 mt-1 font-mono">
               ID: {question.questionId}
             </p>
           </div>
-          <StatusBadge status={question.status} />
+          <div className="ml-4">
+            <StatusBadge status={question.status} />
+          </div>
         </div>
 
         {/* Info Grid */}
@@ -246,6 +263,7 @@ export default function QuestionDetailPage() {
                 variant="secondary"
                 onClick={() => {
                   setIsEditing(false);
+                  setEditTitle(question.title);
                   setEditContent(question.content);
                 }}
                 disabled={saving}

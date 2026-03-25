@@ -61,7 +61,7 @@
     <div style="margin: 20px 0;">
       <div>
         <label>Base URL:</label>
-        <input type="text" id="baseUrl" value="https://localhost:7128/api" style="width: 400px;">
+        <input type="text" id="baseUrl" value="https://localhost:7443/api" style="width: 400px;">
       </div>
       <div style="margin-top: 10px;">
         <label>Email:</label>
@@ -74,7 +74,7 @@
     </div>
 
     <div>
-      <button onclick="testHttps()">Test HTTPS (7128)</button>
+      <button onclick="testHttps()">Test HTTPS (7443)</button>
       <button onclick="testHttp()">Test HTTP (5192)</button>
       <button onclick="testLogin()">Test Login</button>
       <button onclick="clearResult()">Clear</button>
@@ -97,10 +97,10 @@
 
     async function testHttps() {
       clearResult();
-      log('🔍 Testing HTTPS connection: https://localhost:7128/api/auth/me');
+      log('🔍 Testing HTTPS connection: https://localhost:7443/api/auth/me');
 
       try {
-        const response = await fetch('https://localhost:7128/api/auth/me', {
+        const response = await fetch('https://localhost:7443/api/auth/me', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json'
@@ -112,7 +112,7 @@
         log('Response: ' + JSON.stringify(data, null, 2), 'success');
       } catch (err) {
         log(`❌ Error: ${err.message}`, 'error');
-        log('Tip: Nếu thấy SSL error, mở trực tiếp https://localhost:7128/swagger và accept certificate', 'error');
+        log('Tip: Nếu thấy SSL error, mở trực tiếp https://localhost:7443/swagger và accept certificate', 'error');
       }
     }
 

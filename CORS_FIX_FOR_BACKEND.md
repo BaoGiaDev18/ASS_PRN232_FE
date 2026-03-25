@@ -2,11 +2,11 @@
 
 ## Vấn đề hiện tại:
 
-Frontend không thể gọi API từ `http://localhost:5173` đến backend `https://localhost:7128` vì **CORS Policy** chặn request.
+Frontend không thể gọi API từ `http://localhost:5173` đến backend `https://localhost:7443` vì **CORS Policy** chặn request.
 
 ### Lỗi cụ thể:
 ```
-Access to XMLHttpRequest at 'https://localhost:7128/api/auth/login' from origin 'http://localhost:5173'
+Access to XMLHttpRequest at 'https://localhost:7443/api/auth/login' from origin 'http://localhost:5173'
 has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
 ```
 
@@ -78,7 +78,7 @@ app.MapControllers();
 
 ## 🧪 TEST SAU KHI FIX:
 
-1. Mở Swagger: https://localhost:7128/swagger
+1. Mở Swagger: https://localhost:7443/swagger
 2. Mở frontend: http://localhost:5173/login
 3. Đăng nhập với:
    - Email: `admin@swp.com`

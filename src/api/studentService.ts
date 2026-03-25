@@ -2,28 +2,26 @@ import axiosInstance from "./axiosInstance";
 import type {
   QuestionListDto,
   QuestionDetailDto,
+  Notification,
 } from "./types";
 
 /**
  * Student API Service
- * Note: Backend chưa có Student Controller trong API documentation
- * Các functions này được chuẩn bị sẵn cho khi BE implement
- *
- * Hiện tại students có thể:
- * 1. Xem questions trong group của mình
- * 2. Tạo question mới
- * 3. Xem chi tiết question (bao gồm answer từ reviewer)
- * 4. Chỉnh sửa question khi bị reject
+ * ✅ Backend đã có đầy đủ Student Controller
+ * Endpoints: /api/student/*
  */
+
+// ─── QUESTION APIs ───────────────────────────────────────
 
 /**
  * Lấy danh sách questions của student (trong group)
- * Endpoint dự kiến: GET /api/student/questions (chưa có trong BE)
- * Tạm thời có thể dùng supervisor endpoint hoặc filter phía FE
+ * GET /api/student/questions
  */
 export const getStudentQuestions = async (params?: {
   status?: string;
-  search?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
 }): Promise<QuestionListDto[]> => {
   const response = await axiosInstance.get<QuestionListDto[]>(
     "/student/questions",
@@ -33,36 +31,32 @@ export const getStudentQuestions = async (params?: {
 };
 
 /**
- * Lấy chi tiết question
- * Có thể dùng supervisor hoặc reviewer endpoint
- * GET /api/supervisor/questions/{id} hoặc /api/reviewer/questions/{id}
+ * Lấy chi tiết question của student
+ * GET /api/student/questions/{id}
  */
 export const getStudentQuestionDetail = async (
   questionId: string
 ): Promise<QuestionDetailDto> => {
-  // Tạm thời dùng supervisor endpoint vì cả student, supervisor, reviewer
-  // đều có thể xem chi tiết question
   const response = await axiosInstance.get<QuestionDetailDto>(
-    `/supervisor/questions/${questionId}`
+    `/student/questions/${questionId}`
   );
   return response.data;
 };
 
 /**
  * Tạo question mới
- * Endpoint dự kiến: POST /api/student/questions
+ * POST /api/student/questions
+ * Backend tự động assign vào group của student hiện tại
  */
 export interface CreateQuestionRequest {
   title: string;
   content: string;
-  groupId: string;
-  topicId: string;
 }
 
 export const createQuestion = async (
   data: CreateQuestionRequest
-): Promise<QuestionDetailDto> => {
-  const response = await axiosInstance.post<QuestionDetailDto>(
+): Promise<{ questionId: string }> => {
+  const response = await axiosInstance.post<{ questionId: string }>(
     "/student/questions",
     data
   );
@@ -70,21 +64,61 @@ export const createQuestion = async (
 };
 
 /**
- * Cập nhật question (khi bị reject)
- * Endpoint dự kiến: PUT /api/student/questions/{id}
+ * Cập nhật question bị reject
+ * PUT /api/student/questions/{id}
+ * Chỉ có thể edit question có status = "Rejected"
  */
 export interface UpdateQuestionRequest {
-  title?: string;
-  content?: string;
+  title: string;
+  content: string;
 }
 
 export const updateQuestion = async (
   questionId: string,
   data: UpdateQuestionRequest
-): Promise<QuestionDetailDto> => {
-  const response = await axiosInstance.put<QuestionDetailDto>(
+): Promise<void> => {
+  await axiosInstance.put(
     `/student/questions/${questionId}`,
     data
   );
+};
+
+// ─── NOTIFICATION APIs ───────────────────────────────────
+
+/**
+ * Lấy danh sách notifications của student
+ * GET /api/student/notifications
+ */
+export const getStudentNotifications = async (params?: {
+  isRead?: boolean;
+}): Promise<Notification[]> => {
+  const response = await axiosInstance.get<Notification[]>(
+    "/student/notifications",
+    { params }
+  );
   return response.data;
+};
+
+/**
+ * Đánh dấu notification đã đọc
+ * POST /api/student/notifications/{id}/read
+ */
+export const markNotificationAsRead = async (
+  notificationId: string
+): Promise<void> => {
+  await axiosInstance.post(`/student/notifications/${notificationId}/read`);
+};
+
+// ─── EXPORT DEFAULT SERVICE OBJECT ──────────────────────
+
+export const studentService = {
+  // Questions
+  getQuestions: getStudentQuestions,
+  getQuestionDetail: getStudentQuestionDetail,
+  createQuestion,
+  updateQuestion,
+
+  // Notifications
+  getNotifications: getStudentNotifications,
+  markNotificationAsRead,
 };
