@@ -1,43 +1,88 @@
-import { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
-import { mockQuestions, mockTopics, mockUsers } from "../../utils/mockData";
+import { useState, useEffect, useCallback } from "react";
+import { reviewerService } from "../../api/reviewerService";
 import StatusBadge from "../../components/StatusBadge";
 import StatCard from "../../components/StatCard";
 import Modal from "../../components/Modal";
 import Button from "../../components/Button";
-import { formatDate } from "../../utils/helpers";
-import type { Question } from "../../api/types";
+import { formatDate, extractApiError } from "../../utils/helpers";
+import type { QuestionListDto, QuestionDetailDto } from "../../api/types";
 
 export default function ReviewerDashboard() {
-  const { user } = useAuth();
+  const [questions, setQuestions] = useState<QuestionListDto[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const getUserName = (id: string) =>
-    mockUsers.find((u) => u.userId === id)?.fullName ?? id;
-  const getTopicName = (id: string) =>
-    mockTopics.find((t) => t.topicId === id)?.topicName ?? id;
-
-  // Topics assigned to this reviewer
-  const assignedTopics = mockTopics.filter(
-    (t) => t.reviewerId === (user?.userId ?? ""),
+  const [answerModal, setAnswerModal] = useState<QuestionDetailDto | null>(
+    null,
   );
-  const topicIds = assignedTopics.map((t) => t.topicId);
-
-  // Questions within assigned topics
-  const questions = mockQuestions.filter((q) => topicIds.includes(q.topicId));
-  const approvedQuestions = questions.filter((q) => q.status === "Approved");
-
-  const [answerModal, setAnswerModal] = useState<Question | null>(null);
   const [answerText, setAnswerText] = useState("");
+  const [answerLoading, setAnswerLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [actionDone, setActionDone] = useState<string | null>(null);
 
-  const handleSubmitAnswer = () => {
-    if (!answerText.trim()) return;
-    setActionDone(
-      `Answer submitted successfully for "${answerModal?.title.substring(0, 40)}..."`,
-    );
-    setAnswerModal(null);
-    setAnswerText("");
-    setTimeout(() => setActionDone(null), 3000);
+  // Debounce search text to avoid firing API on every keystroke (fixes Vietnamese IME)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchText), 500);
+    return () => clearTimeout(timer);
+  }, [searchText]);
+
+  const fetchQuestions = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+      const params: Record<string, string> = {};
+      if (statusFilter) params.status = statusFilter;
+      if (debouncedSearch.trim()) params.search = debouncedSearch.trim();
+      const data = await reviewerService.getQuestions(params);
+      setQuestions(data);
+    } catch (err) {
+      setError(extractApiError(err, "Failed to load questions"));
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, debouncedSearch]);
+
+  useEffect(() => {
+    fetchQuestions();
+  }, [fetchQuestions]);
+
+  const approvedCount = questions.filter((q) => q.status === "Approved").length;
+  const answeredCount = questions.filter((q) => q.status === "Answered").length;
+
+  const openAnswerModal = async (questionId: string) => {
+    try {
+      setDetailLoading(true);
+      const detail = await reviewerService.getQuestionDetail(questionId);
+      setAnswerModal(detail);
+    } catch (err) {
+      setError(extractApiError(err, "Failed to load question detail"));
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const handleSubmitAnswer = async () => {
+    if (!answerText.trim() || !answerModal) return;
+    try {
+      setAnswerLoading(true);
+      await reviewerService.answer(answerModal.questionId, {
+        answerContent: answerText.trim(),
+      });
+      setActionDone(
+        `Answer submitted successfully for "${answerModal.title.substring(0, 40)}..."`,
+      );
+      setAnswerModal(null);
+      setAnswerText("");
+      fetchQuestions();
+      setTimeout(() => setActionDone(null), 3000);
+    } catch (err) {
+      setError(extractApiError(err, "Failed to submit answer"));
+    } finally {
+      setAnswerLoading(false);
+    }
   };
 
   return (
@@ -56,29 +101,44 @@ export default function ReviewerDashboard() {
         <StatCard label="Total Questions" value={questions.length} icon="📋" />
         <StatCard
           label="Needs Answer"
-          value={approvedQuestions.length}
+          value={approvedCount}
           icon="✏️"
           color="bg-blue-50 text-blue-600"
         />
         <StatCard
-          label="Assigned Topics"
-          value={assignedTopics.length}
-          icon="📝"
-          color="bg-purple-50 text-purple-600"
+          label="Answered"
+          value={answeredCount}
+          icon="💬"
+          color="bg-emerald-50 text-emerald-600"
         />
       </div>
 
-      {/* Assigned Topics */}
-      <div className="mb-6 flex flex-wrap gap-2">
-        {assignedTopics.map((t) => (
-          <span
-            key={t.topicId}
-            className="inline-flex items-center px-3 py-1.5 bg-orange-50 text-orange-700 text-xs font-semibold rounded-full border border-orange-200"
-          >
-            {t.topicName}
-          </span>
-        ))}
+      {/* Filter */}
+      <div className="mb-6 flex items-center gap-4 flex-wrap">
+        <label className="text-sm font-medium text-slate-600">Filter:</label>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="h-10 border border-slate-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 bg-white"
+        >
+          <option value="">All Statuses</option>
+          <option value="Approved">Approved</option>
+          <option value="Answered">Answered</option>
+        </select>
+        <input
+          type="text"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder="Search questions..."
+          className="h-10 border border-slate-300 rounded-lg px-4 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400 bg-white w-64"
+        />
       </div>
+
+      {error && (
+        <div className="mb-4 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">
+          {error}
+        </div>
+      )}
 
       {actionDone && (
         <div className="mb-4 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm font-medium flex items-center gap-2">
@@ -118,55 +178,69 @@ export default function ReviewerDashboard() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {questions.map((q) => (
-                <tr
-                  key={q.questionId}
-                  className="hover:bg-slate-50/50 transition-colors"
-                >
-                  <td className="px-6 py-4 max-w-xs truncate font-medium text-slate-700">
-                    {q.title}
-                  </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    {getTopicName(q.topicId)}
-                  </td>
-                  <td className="px-6 py-4 text-slate-500">
-                    {getUserName(q.createdBy)}
-                  </td>
-                  <td className="px-6 py-4">
-                    <StatusBadge status={q.status} />
-                  </td>
-                  <td className="px-6 py-4 text-slate-400 text-xs">
-                    {formatDate(q.createdAt)}
-                  </td>
-                  <td className="px-6 py-4">
-                    {q.status === "Approved" && (
-                      <button
-                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors"
-                        onClick={() => setAnswerModal(q)}
-                      >
-                        ✎ Answer
-                      </button>
-                    )}
-                    {q.status === "Answered" && (
-                      <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-semibold">
-                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
-                        Answered
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {questions.length === 0 && (
+              {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-16 text-center">
                     <div className="flex flex-col items-center gap-2">
-                      <span className="text-4xl">📭</span>
-                      <p className="text-slate-400 font-medium">
-                        No questions found
-                      </p>
+                      <div className="w-8 h-8 border-4 border-orange-200 border-t-orange-500 rounded-full animate-spin" />
+                      <p className="text-slate-400 text-sm">Loading...</p>
                     </div>
                   </td>
                 </tr>
+              ) : (
+                <>
+                  {questions.map((q) => (
+                    <tr
+                      key={q.questionId}
+                      className="hover:bg-slate-50/50 transition-colors"
+                    >
+                      <td className="px-6 py-4 max-w-xs truncate font-medium text-slate-700">
+                        {q.title}
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">
+                        {q.topicName}
+                      </td>
+                      <td className="px-6 py-4 text-slate-500">
+                        {q.createdByName}
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge status={q.status} />
+                      </td>
+                      <td className="px-6 py-4 text-slate-400 text-xs">
+                        {q.createdAt ? formatDate(q.createdAt) : "—"}
+                      </td>
+                      <td className="px-6 py-4">
+                        {q.status === "Approved" && (
+                          <button
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold rounded-lg bg-orange-50 text-orange-700 border border-orange-200 hover:bg-orange-100 transition-colors disabled:opacity-50"
+                            onClick={() => openAnswerModal(q.questionId)}
+                            disabled={detailLoading}
+                          >
+                            ✎ Answer
+                          </button>
+                        )}
+                        {q.status === "Answered" && (
+                          <span className="inline-flex items-center gap-1 text-xs text-emerald-600 font-semibold">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                            Answered
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {questions.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-6 py-16 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <span className="text-4xl">📭</span>
+                          <p className="text-slate-400 font-medium">
+                            No questions found
+                          </p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
               )}
             </tbody>
           </table>
@@ -197,13 +271,13 @@ export default function ReviewerDashboard() {
               <span>
                 Student:{" "}
                 <span className="text-slate-600 font-medium">
-                  {getUserName(answerModal.createdBy)}
+                  {answerModal.createdByName}
                 </span>
               </span>
               <span>
                 Topic:{" "}
                 <span className="text-slate-600 font-medium">
-                  {getTopicName(answerModal.topicId)}
+                  {answerModal.topicName}
                 </span>
               </span>
             </div>
@@ -235,9 +309,9 @@ export default function ReviewerDashboard() {
               </Button>
               <Button
                 onClick={handleSubmitAnswer}
-                disabled={!answerText.trim()}
+                disabled={!answerText.trim() || answerLoading}
               >
-                Submit Answer
+                {answerLoading ? "Submitting..." : "Submit Answer"}
               </Button>
             </div>
           </div>

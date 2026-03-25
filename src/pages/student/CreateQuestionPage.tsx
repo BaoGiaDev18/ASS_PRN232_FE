@@ -1,27 +1,35 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
-import { mockGroups, mockTopics, mockGroupMembers } from "../../utils/mockData";
+import { studentService } from "../../api/studentService";
+import { extractApiError } from "../../utils/helpers";
 import Button from "../../components/Button";
 import Card from "../../components/Card";
 
 export default function CreateQuestionPage() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const membership = mockGroupMembers.find((m) => m.studentId === user?.userId);
-  const group = mockGroups.find((g) => g.groupId === membership?.groupId);
-  const topic = mockTopics.find((t) => t.topicId === group?.topicId);
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !content.trim()) return;
-    // Mock submission
-    setSubmitted(true);
-    setTimeout(() => navigate("/student"), 1500);
+    try {
+      setLoading(true);
+      setError("");
+      await studentService.createQuestion({
+        title: title.trim(),
+        content: content.trim(),
+      });
+      setSubmitted(true);
+      setTimeout(() => navigate("/student"), 1500);
+    } catch (err) {
+      setError(extractApiError(err, "Failed to create question"));
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -55,29 +63,11 @@ export default function CreateQuestionPage() {
 
       <Card>
         <form onSubmit={handleSubmit}>
-          <div className="mb-5">
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Group
-            </label>
-            <input
-              type="text"
-              value={group?.groupName ?? "N/A"}
-              readOnly
-              className="w-full h-11 px-4 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500"
-            />
-          </div>
-
-          <div className="mb-5">
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">
-              Topic (auto-assigned)
-            </label>
-            <input
-              type="text"
-              value={topic?.topicName ?? "N/A"}
-              readOnly
-              className="w-full h-11 px-4 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-500"
-            />
-          </div>
+          {error && (
+            <div className="mb-5 px-4 py-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-sm">
+              {error}
+            </div>
+          )}
 
           <div className="mb-5">
             <label
@@ -114,8 +104,11 @@ export default function CreateQuestionPage() {
           </div>
 
           <div className="flex gap-4">
-            <Button type="submit" disabled={!title.trim() || !content.trim()}>
-              Submit Question
+            <Button
+              type="submit"
+              disabled={!title.trim() || !content.trim() || loading}
+            >
+              {loading ? "Submitting..." : "Submit Question"}
             </Button>
             <Button
               type="button"
