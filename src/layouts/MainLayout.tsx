@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import type { Role } from "../api/types";
+import NotificationBell from "../components/NotificationBell";
 
 const navItems: Record<Role, { label: string; icon: string; path: string }[]> =
   {
@@ -170,6 +171,9 @@ export default function MainLayout() {
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Notification Bell — Student only */}
+            {user.role === "Student" && <NotificationBell />}
+
             {/* User Profile */}
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">

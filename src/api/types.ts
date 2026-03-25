@@ -218,7 +218,26 @@ export interface HistorySummaryDto {
   pending: number;
 }
 
-// ─── Legacy types (kept for pages not yet migrated) ─────
+// ─── Student DTOs ───────────────────────────────────────
+export interface CreateQuestionRequest {
+  title: string;
+  content: string;
+}
+
+export interface UpdateQuestionRequest {
+  title: string;
+  content: string;
+}
+
+export interface NotificationDto {
+  notificationId: string;
+  questionId?: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+// ─── Legacy types (kept for backward compat) ────────────
 export interface Question {
   questionId: string;
   title: string;
