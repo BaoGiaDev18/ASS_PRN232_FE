@@ -1,6 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { supervisorService } from "../../api/supervisorService";
-import type { QuestionListDto, SupervisorGroupDto } from "../../api/types";
+import type {
+  QuestionListDto,
+  QuestionDetailDto,
+  SupervisorGroupDto,
+} from "../../api/types";
 import StatusBadge from "../../components/StatusBadge";
 import StatCard from "../../components/StatCard";
 import Modal from "../../components/Modal";
@@ -21,6 +25,23 @@ export default function SupervisorDashboard() {
   const [rejectReason, setRejectReason] = useState("");
   const [actionDone, setActionDone] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+
+  const [detailModal, setDetailModal] = useState<QuestionDetailDto | null>(
+    null,
+  );
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const openDetailModal = async (questionId: string) => {
+    try {
+      setDetailLoading(true);
+      const detail = await supervisorService.getQuestionDetail(questionId);
+      setDetailModal(detail);
+    } catch {
+      alert("Failed to load question detail");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     try {
@@ -153,7 +174,13 @@ export default function SupervisorDashboard() {
                   className="hover:bg-slate-50/50 transition-colors"
                 >
                   <td className="px-6 py-4 max-w-xs truncate font-medium text-slate-700">
-                    {q.title}
+                    <button
+                      className="text-left hover:text-orange-600 hover:underline transition-colors cursor-pointer"
+                      onClick={() => openDetailModal(q.questionId)}
+                      disabled={detailLoading}
+                    >
+                      {q.title}
+                    </button>
                   </td>
                   <td className="px-6 py-4 text-slate-500">
                     {q.createdByName}
@@ -205,6 +232,139 @@ export default function SupervisorDashboard() {
           </table>
         </div>
       </div>
+
+      {/* Question Detail Modal */}
+      <Modal
+        open={detailModal !== null}
+        onClose={() => setDetailModal(null)}
+        title="Question Detail"
+      >
+        {detailModal && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-800">
+                {detailModal.title}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-mono">
+                ID: {detailModal.questionId}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Status
+                </span>
+                <div className="mt-1">
+                  <StatusBadge status={detailModal.status} />
+                </div>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Created By
+                </span>
+                <p className="mt-1 text-slate-700 font-medium">
+                  {detailModal.createdByName}
+                </p>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Group
+                </span>
+                <p className="mt-1 text-slate-700">{detailModal.groupName}</p>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Topic
+                </span>
+                <p className="mt-1 text-slate-700">{detailModal.topicName}</p>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Created
+                </span>
+                <p className="mt-1 text-slate-700">
+                  {detailModal.createdAt
+                    ? formatDate(detailModal.createdAt)
+                    : "—"}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Question Content
+              </span>
+              <div className="mt-2 bg-slate-50 rounded-xl p-4 text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                {detailModal.content}
+              </div>
+            </div>
+
+            {detailModal.rejectReason && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white text-[10px]">
+                    ✕
+                  </span>
+                  <span className="text-xs font-bold text-rose-700 uppercase tracking-wider">
+                    Rejection Reason
+                  </span>
+                </div>
+                <p className="text-sm text-rose-800 leading-relaxed">
+                  {detailModal.rejectReason}
+                </p>
+              </div>
+            )}
+
+            {detailModal.answer && (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center text-white text-[10px]">
+                    ✓
+                  </span>
+                  <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">
+                    Official Answer
+                  </span>
+                </div>
+                <p className="text-sm text-emerald-800 leading-relaxed">
+                  {detailModal.answer.answerContent}
+                </p>
+                <p className="text-xs text-emerald-500 mt-2 font-medium">
+                  — {detailModal.answer.reviewerName} •{" "}
+                  {detailModal.answer.answeredAt
+                    ? formatDate(detailModal.answer.answeredAt)
+                    : ""}
+                </p>
+              </div>
+            )}
+
+            {detailModal.status === "Pending Approval" && (
+              <div className="flex gap-3 pt-2 border-t border-slate-100">
+                <button
+                  className="inline-flex items-center gap-1 px-4 py-2 text-sm font-semibold rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                  onClick={async () => {
+                    await handleApprove(detailModal);
+                    setDetailModal(null);
+                  }}
+                  disabled={actionLoading}
+                >
+                  ✓ Approve
+                </button>
+                <button
+                  className="inline-flex items-center gap-1 px-4 py-2 text-sm font-semibold rounded-lg bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                  onClick={() => {
+                    setRejectTargetId(detailModal.questionId);
+                    setRejectModalOpen(true);
+                    setDetailModal(null);
+                  }}
+                >
+                  ✕ Reject
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={rejectModalOpen}

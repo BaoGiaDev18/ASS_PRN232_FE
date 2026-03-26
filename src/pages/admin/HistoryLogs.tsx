@@ -3,11 +3,13 @@ import { historyService } from "../../api/historyService";
 import type { HistoryItemDto, HistorySummaryDto } from "../../api/types";
 import { formatDate } from "../../utils/helpers";
 import StatCard from "../../components/StatCard";
+import Modal from "../../components/Modal";
 
 export default function HistoryLogs() {
   const [items, setItems] = useState<HistoryItemDto[]>([]);
   const [summary, setSummary] = useState<HistorySummaryDto | null>(null);
   const [loading, setLoading] = useState(true);
+  const [detailItem, setDetailItem] = useState<HistoryItemDto | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -121,7 +123,12 @@ export default function HistoryLogs() {
                     </span>
                   </td>
                   <td className="px-6 py-4 max-w-xs truncate font-medium text-slate-700">
-                    {item.title}
+                    <button
+                      className="text-left hover:text-orange-600 hover:underline transition-colors cursor-pointer"
+                      onClick={() => setDetailItem(item)}
+                    >
+                      {item.title}
+                    </button>
                   </td>
                   <td className="px-6 py-4 text-slate-500">
                     {item.createdByName}
@@ -146,6 +153,131 @@ export default function HistoryLogs() {
           </table>
         </div>
       </div>
+
+      {/* Detail Modal */}
+      <Modal
+        open={detailItem !== null}
+        onClose={() => setDetailItem(null)}
+        title="Question Detail"
+      >
+        {detailItem && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="text-base font-bold text-slate-800">
+                {detailItem.title}
+              </h3>
+              <p className="text-xs text-slate-400 mt-1 font-mono">
+                ID: {detailItem.questionId}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Status
+                </span>
+                <div className="mt-1">
+                  <span
+                    className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${statusColors[detailItem.status] ?? "bg-slate-50 text-slate-700 border border-slate-200"}`}
+                  >
+                    {detailItem.status}
+                  </span>
+                </div>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Created By
+                </span>
+                <p className="mt-1 text-slate-700 font-medium">
+                  {detailItem.createdByName}
+                </p>
+                <p className="text-xs text-slate-400">
+                  {detailItem.createdByCode}
+                </p>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Group
+                </span>
+                <p className="mt-1 text-slate-700">{detailItem.groupName}</p>
+              </div>
+              <div>
+                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Topic
+                </span>
+                <p className="mt-1 text-slate-700">{detailItem.topicName}</p>
+              </div>
+            </div>
+
+            {detailItem.rejectReason && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-4 h-4 bg-rose-500 rounded-full flex items-center justify-center text-white text-[10px]">
+                    ✕
+                  </span>
+                  <span className="text-xs font-bold text-rose-700 uppercase tracking-wider">
+                    Rejection Reason
+                  </span>
+                </div>
+                <p className="text-sm text-rose-800 leading-relaxed">
+                  {detailItem.rejectReason}
+                </p>
+              </div>
+            )}
+
+            {/* Timeline */}
+            <div className="bg-slate-50 rounded-xl p-4">
+              <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                Timeline
+              </span>
+              <div className="mt-2 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Created</span>
+                  <span className="text-slate-700 font-medium">
+                    {detailItem.createdAt
+                      ? formatDate(detailItem.createdAt)
+                      : "—"}
+                  </span>
+                </div>
+                {detailItem.approvedByName && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">
+                      Approved by {detailItem.approvedByName}
+                    </span>
+                    <span className="text-slate-700 font-medium">
+                      {detailItem.approvedAt
+                        ? formatDate(detailItem.approvedAt)
+                        : "—"}
+                    </span>
+                  </div>
+                )}
+                {detailItem.answeredByName && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">
+                      Answered by {detailItem.answeredByName}
+                    </span>
+                    <span className="text-slate-700 font-medium">
+                      {detailItem.answeredAt
+                        ? formatDate(detailItem.answeredAt)
+                        : "—"}
+                    </span>
+                  </div>
+                )}
+                {detailItem.processingMinutes != null && (
+                  <div className="flex justify-between border-t border-slate-200 pt-2 mt-2">
+                    <span className="text-slate-500">Processing Time</span>
+                    <span className="text-slate-700 font-medium">
+                      {detailItem.processingMinutes < 60
+                        ? `${detailItem.processingMinutes} min`
+                        : `${Math.floor(detailItem.processingMinutes / 60)}h ${detailItem.processingMinutes % 60}m`}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
